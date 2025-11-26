@@ -1,4 +1,4 @@
-import { useRef, useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useCustomizerStore } from "../../state/useCustomizerStore";
 import { Mesh, MeshStandardMaterial } from "three";
 import { useGLTF } from "@react-three/drei";
@@ -7,26 +7,50 @@ import { useGLTF } from "@react-three/drei";
 
 function ShoeModel() {
   const { colors } = useCustomizerStore();
-  return (
-    <group dispose={null}>
-      <mesh position={[0, 0.5, 0]} castShadow receiveShadow>
-        <boxGeometry args={[2, 1, 4]} />
-        <meshStandardMaterial color={colors.base} roughness={0.3} />
-      </mesh>
-      <mesh position={[1.1, 0.5, 0]} castShadow receiveShadow>
-        <boxGeometry args={[0.2, 0.8, 2]} />
-        <meshStandardMaterial color={colors.accent} metalness={0.5} roughness={0.2} />
-      </mesh>
-      <mesh position={[-1.1, 0.5, 0]} castShadow receiveShadow>
-        <boxGeometry args={[0.2, 0.8, 2]} />
-        <meshStandardMaterial color={colors.accent} metalness={0.5} roughness={0.2} />
-      </mesh>
-      <mesh position={[0, -0.25, 0]} castShadow receiveShadow>
-        <boxGeometry args={[2.2, 0.5, 4.2]} />
-        <meshStandardMaterial color={colors.sole} roughness={0.8} />
-      </mesh>
-    </group>
+  const { scene } = useGLTF(
+    "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/MaterialsVariantsShoe/glTF-Binary/MaterialsVariantsShoe.glb"
   );
+
+  const clone = useMemo(() => {
+    const clonedScene = scene.clone();
+    clonedScene.traverse((child) => {
+      if ((child as Mesh).isMesh) {
+        const mesh = child as Mesh;
+        if (mesh.material) {
+          // Clone material to avoid side-effects
+          if (Array.isArray(mesh.material)) {
+            mesh.material = mesh.material.map((m) => m.clone());
+          } else {
+            mesh.material = mesh.material.clone();
+          }
+        }
+      }
+    });
+    return clonedScene;
+  }, [scene]);
+
+  useEffect(() => {
+    clone.traverse((child) => {
+      if ((child as Mesh).isMesh) {
+        const mesh = child as Mesh;
+        const material = mesh.material as MeshStandardMaterial;
+        const materialName = material.name?.toLowerCase() || "";
+        const meshName = mesh.name?.toLowerCase() || "";
+
+        // console.log("Mesh:", meshName, "Material:", materialName);
+
+        if (meshName.includes("laces") || materialName.includes("laces")) {
+          material.color.set(colors.accent);
+        } else if (meshName.includes("sole") || materialName.includes("sole")) {
+          material.color.set(colors.sole);
+        } else {
+          material.color.set(colors.base);
+        }
+      }
+    });
+  }, [colors, clone]);
+
+  return <primitive object={clone} />;
 }
 
 function CubeModel() {
@@ -73,23 +97,30 @@ function CustomModel({ url }: { url: string }) {
   const { colors } = useCustomizerStore();
   const { scene } = useGLTF(url);
 
-  // Clone scene to avoid modifying cached GLTF
-  const clonedScene = useRef(scene.clone());
-
-  useEffect(() => {
-    clonedScene.current = scene.clone();
+  const clone = useMemo(() => {
+    const clonedScene = scene.clone();
+    clonedScene.traverse((child) => {
+      if ((child as Mesh).isMesh) {
+        const mesh = child as Mesh;
+        if (mesh.material) {
+          if (Array.isArray(mesh.material)) {
+            mesh.material = mesh.material.map((m) => m.clone());
+          } else {
+            mesh.material = mesh.material.clone();
+          }
+        }
+      }
+    });
+    return clonedScene;
   }, [scene]);
 
   // Apply colors to the first 3 meshes found
   useEffect(() => {
     let meshIndex = 0;
-    clonedScene.current.traverse((child) => {
+    clone.traverse((child) => {
       if ((child as Mesh).isMesh) {
         const mesh = child as Mesh;
         if (mesh.material instanceof MeshStandardMaterial) {
-          // Clone material to avoid sharing if needed, but for now direct mutation is fine for simple color change
-          // Actually, better to clone if we want to be safe, but let's just set color.
-          // We need to ensure material is MeshStandardMaterial or similar.
           if (meshIndex === 0) mesh.material.color.set(colors.base);
           else if (meshIndex === 1) mesh.material.color.set(colors.accent);
           else if (meshIndex === 2) mesh.material.color.set(colors.sole);
@@ -97,9 +128,9 @@ function CustomModel({ url }: { url: string }) {
         meshIndex++;
       }
     });
-  }, [colors, clonedScene]);
+  }, [colors, clone]);
 
-  return <primitive object={clonedScene.current} />;
+  return <primitive object={clone} />;
 }
 
 export function ProductModel() {
@@ -117,3 +148,7 @@ export function ProductModel() {
       return <ShoeModel />;
   }
 }
+
+useGLTF.preload(
+  "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/MaterialsVariantsShoe/glTF-Binary/MaterialsVariantsShoe.glb"
+);
